@@ -1,5 +1,10 @@
 const msInDay = 24 * 60 * 60 * 1000;
 
+// These limits are to sanity check the user's inputs
+const LimitYear = 2026;
+const LimitPreTax = 24500;
+const LimitCombined = 72000;
+
 let chartInstance = null;
 
 $(document).ready(() => {
@@ -247,6 +252,20 @@ function calculateStrategy() {
   const totalProjected = runningPretax + runningPosttax + runningMatch;
   if (totalProjected > limitCombined) {
     $ul.append($('<li>').addClass('text-danger').text(`Warning: Total projected contributions ($${totalProjected.toLocaleString(undefined, {maximumFractionDigits:0})}) exceed the IRS Combined Annual Limit.`));
+  }
+
+  // Add a warning if the limits seem fishy
+  const currentYear = firstPayDate.getFullYear();
+  if (currentYear != LimitYear) {
+    // Year is different, check if the limits weren't changed
+    if (limitPretax == LimitPreTax || limitCombined == LimitCombined) {
+      $ul.append($('<li>').addClass('text-danger').text(`Warning: Limits have not been modified from defaults for ${LimitYear}`));
+    }
+  } else {
+    // Year is same, check if the limits were changed
+    if (limitPretax != LimitPreTax || limitCombined != LimitCombined) {
+      $ul.append($('<li>').addClass('text-danger').text(`Warning: Limits have been modified from defaults for ${LimitYear}`));
+    }
   }
 
   $('#schedule-text').html($ul);
