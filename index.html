@@ -9,7 +9,7 @@
     .chart-container {
       position: relative;
       width: 100%;
-      height: 350px;
+      height: 550px;
     }
   </style>
 </head>
@@ -23,7 +23,7 @@
     </div>
   
     <div class="row g-4">
-      <!-- Left Column: Inputs -->
+      <!-- Left Column: Parameters -->
       <div class="col-12 col-lg-4">
         <section class="card p-4 h-100">
           <h3 class="mb-3 pb-2 border-bottom">Parameters</h3>
@@ -93,6 +93,14 @@
               <input type="number" id="paycheck-ytd-posttax" class="form-control">
             </div>
           </div>
+ 
+          <div class="mb-3">
+            <label for="paycheck-posttax-pct" class="form-label">Paycheck Post-Tax Percentage</label>
+            <div class="input-group">
+              <span class="input-group-text">%</span>
+              <input type="number" id="paycheck-posttax-pct" class="form-control" value="0" min="0" max="100">
+            </div>
+          </div>
 
           <div class="mb-3">
             <div class="row g-2">
@@ -108,40 +116,60 @@
         </section>
       </div>
   
-      <!-- Right Column: Analytics & Chart -->
+      <!-- Right Column: Results -->
       <div class="col-12 col-lg-8">
         <section class="card p-4 h-100">
-          <h3 class="mb-4 pb-2 border-bottom">Strategy</h3>
+          <h3 class="mb-4 pb-2 border-bottom">Results</h3>
   
           <!-- Summary Grid -->
           <div class="row row-cols-3 text-center g-3 mb-4">
             <div class="col">
               <div class="bg-light p-3 rounded border">
-                <div class="d-block mb-1">Remaining Cap Room</div>
-                <h4 class="text-primary m-0" id="val-remaining-cap">$0</h4>
+                <div class="d-block fw-bold mb-1">Current Check Count</div>
+                <h4 class="text-primary m-0"><span id="val-paychecks-current">0</span> / <span id="val-paychecks-total">0</span></h4>
               </div>
             </div>
             <div class="col">
               <div class="bg-light p-3 rounded border">
-                <div class="d-block mb-1">Current Check Count</div>
-                <h4 class="text-primary m-0" id="val-paychecks-current">0</h4>
-              </div>
-            </div>
-            <div class="col">
-              <div class="bg-light p-3 rounded border">
-                <div class="d-block mb-1">Remaining Paychecks</div>
+                <div class="d-block fw-bold mb-1">Remaining Paychecks</div>
                 <h4 class="text-primary m-0" id="val-paychecks-left">0</h4>
+              </div>
+            </div>
+            <div class="col">
+              <div class="bg-light p-3 rounded border">
+                <div class="d-block fw-bold mb-1">Projected Total</div>
+                <h4 class="text-primary m-0" id="val-projected-total">$0.00</h4>
+              </div>
+            </div>
+          </div>
+          <div class="row row-cols-3 text-center g-3 mb-4">
+            <div class="col">
+              <div class="bg-light p-3 rounded border">
+                <div class="d-block fw-bold mb-1">Projected Pre-Tax</div>
+                <h4 class="text-primary m-0" id="val-projected-pretax">$0.00</h4>
+              </div>
+            </div>
+            <div class="col">
+              <div class="bg-light p-3 rounded border">
+                <div class="d-block fw-bold mb-1">Projected Post-Tax</div>
+                <h4 class="text-primary m-0" id="val-projected-posttax">$0.00</h4>
+              </div>
+            </div>
+            <div class="col">
+              <div class="bg-light p-3 rounded border">
+                <div class="d-block fw-bold mb-1">Projected Match</div>
+                <h4 class="text-primary m-0" id="val-projected-match">$0.00</h4>
               </div>
             </div>
           </div>
   
-          <!-- Plan Banner -->
+          <!-- Plan -->
           <div class="alert alert-info border-start border-0 border-4 border-primary mb-4">
             <h4 class="alert-heading mb-2">Plan</h4>
             <div id="schedule-text" class="mb-0"><strong>Awaiting Inputs:</strong> Please provide valid income and date parameters.</div>
           </div>
   
-          <!-- Live Chart Element -->
+          <!-- Chart -->
           <div class="chart-container">
             <canvas id="forecastChart"></canvas>
           </div>
