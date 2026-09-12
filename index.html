@@ -19,7 +19,10 @@
     <!-- Header Block -->
     <div class="card p-4 mb-4">
       <h2>401(k) Maximizer</h2>
-      <p class="mb-0">Calculate your 401(k) contribution percentage schedule to hit the exact IRS cap on your last paycheck without losing employer matching.</p>
+      <p class="mb-0">
+        Calculate your 401(k) contribution percentage schedule to hit the exact
+        IRS cap on your last paycheck without losing employer matching.
+      </p>
     </div>
 
     <div class="row g-4">
@@ -28,8 +31,8 @@
         <section class="card p-4 h-100">
           <h3 class="mb-3 pb-2 border-bottom">Parameters</h3>
 
-          <div class="form-group">
-            <label for="ageBracket">Age Bracket at End of Year</label>
+          <div class="mb-3">
+            <label for="ageBracket" class="form-label">Age Bracket at End of Year</label>
             <select id="ageBracket" class="form-select" data-save>
               <option value="under-50" selected>Under 50</option>
               <option value="50-59">Ages 50 – 59</option>
@@ -42,7 +45,7 @@
             <label for="limitPreTax" class="form-label">IRS Pre-Tax Deferral Limit</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="limitPreTax" class="form-control" value="24500" data-save>
+              <input type="number" id="limitPreTax" class="form-control" value="24500" min="0" data-save>
             </div>
           </div>
 
@@ -50,7 +53,7 @@
             <label for="limitCombined" class="form-label">IRS Combined Annual Limit (All Sources)</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="limitCombined" class="form-control" value="72000" data-save>
+              <input type="number" id="limitCombined" class="form-control" value="72000" min="0" data-save>
             </div>
           </div>
 
@@ -76,7 +79,7 @@
             <label for="paycheckGross" class="form-label">Paycheck Gross Income</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="paycheckGross" class="form-control" data-save>
+              <input type="number" id="paycheckGross" class="form-control" min="0" data-save>
             </div>
           </div>
 
@@ -84,7 +87,7 @@
             <label for="paycheckYtdGross" class="form-label">Paycheck YTD Gross Income</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="paycheckYtdGross" class="form-control" data-save>
+              <input type="number" id="paycheckYtdGross" class="form-control" min="0" data-save>
             </div>
           </div>
 
@@ -92,7 +95,7 @@
             <label for="paycheckYtdPreTaxContrib" class="form-label">Paycheck YTD Pre-Tax Contributions</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="paycheckYtdPreTaxContrib" class="form-control" data-save>
+              <input type="number" id="paycheckYtdPreTaxContrib" class="form-control" min="0" data-save>
             </div>
           </div>
 
@@ -100,7 +103,7 @@
             <label for="paycheckYtdPostTaxContrib" class="form-label">Paycheck YTD Post-Tax Contributions</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="paycheckYtdPostTaxContrib" class="form-control" data-save>
+              <input type="number" id="paycheckYtdPostTaxContrib" class="form-control" min="0" data-save>
             </div>
           </div>
 

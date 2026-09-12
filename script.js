@@ -177,9 +177,15 @@ function calculateStrategy() {
       paycheckYtdPostTaxContrib < 0 ||
       futurePostTaxContribPct < 0) {
     $('#schedule-text').html('<strong>Awaiting Inputs:</strong> Please provide valid income and date parameters.');
-    $('#val-remaining-cap').text('$0.00');
     $('#val-paychecks-current').text('0');
-    $('#val-paychecks-left').text('0');
+    $('#val-paychecks-total').text('0');
+    $('#val-new-pretax-contrib').text('$0.00');
+    $('#val-new-posttax-contrib').text('$0.00');
+    $('#val-projected-pretax').text('$0.00');
+    $('#val-projected-posttax').text('$0.00');
+    $('#val-projected-match').text('$0.00');
+    $('#val-projected-total').text('$0.00');
+
     if (chartInstance) {
       chartInstance.data.labels = [];
       chartInstance.data.datasets.forEach(dataset => {
