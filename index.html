@@ -42,15 +42,28 @@
           </div>
 
           <div class="mb-3">
-            <label for="limitPreTax" class="form-label">IRS Pre-Tax Deferral Limit</label>
+            <label for="limitBaseElective" class="form-label">IRS Base Deferral Limit</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="limitPreTax" class="form-control" value="24500" min="0" data-save>
+              <input type="number" id="limitBaseElective" class="form-control" value="24500" min="0" data-save>
             </div>
           </div>
 
+          <div class="mb-3 catchup d-none">
+            <label for="limitCatchUpElective" class="form-label">IRS Catch-Up Deferral Limit</label>
+            <div class="input-group">
+              <span class="input-group-text">$</span>
+              <input type="number" id="limitCatchUpElective" class="form-control" value="8000" min="0" data-save>
+            </div>
+          </div>
+
+          <div class="mb-3 catchup d-none">
+            <input type="checkbox" id="priorYearHighEarner" class="form-check-input" value="" data-save>
+            <label for="priorYearHighEarner" class="form-check-label">High-Earner Roth Catch-Up</label>
+          </div>
+
           <div class="mb-3">
-            <label for="limitCombined" class="form-label">IRS Combined Annual Limit (All Sources)</label>
+            <label for="limitCombined" class="form-label">IRS Combined Limit (Base + Catch-Up + Match)</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
               <input type="number" id="limitCombined" class="form-control" value="72000" min="0" data-save>
@@ -96,6 +109,14 @@
             <div class="input-group">
               <span class="input-group-text">$</span>
               <input type="number" id="paycheckYtdPreTaxContrib" class="form-control" min="0" data-save>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="paycheckYtdRothContrib" class="form-label">Paycheck YTD Roth Contributions</label>
+            <div class="input-group">
+              <span class="input-group-text">$</span>
+              <input type="number" id="paycheckYtdRothContrib" class="form-control" min="0" data-save>
             </div>
           </div>
 
@@ -181,6 +202,11 @@
                   <li class="list-group-item d-flex justify-content-between">
                     <div>Pre-Tax Contributions</div>
                     <div id="val-projected-pretax">$0.00</div>
+                  </li>
+
+                  <li class="list-group-item d-flex justify-content-between">
+                    <div>Roth Contributions</div>
+                    <div id="val-projected-roth">$0.00</div>
                   </li>
 
                   <li class="list-group-item d-flex justify-content-between">
