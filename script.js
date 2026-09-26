@@ -20,12 +20,353 @@ const IrsLimitsByYear = {
   }
 };
 
+const MsPerDay = 24 * 60 * 60 * 1000;
+
 let chartInstance = null;
 
 $(document).ready(() => {
+  chartInstance = initChart();
+
+  // Add handlers to the save/load buttons
+  $('#save-input').on('click', exportJson);
+  $('#load-input').on('change', importJson);
+
+  // Add handler to show/hide catch-up fields
+  $('#ageBracket').change(function() {
+    $('.catchup').toggleClass('d-none', $(this).val() === 'under-50');
+  });
+
+  // Add handlers to recalculate when input changes
+  $('select, input[type="checkbox"]').on('change', calculate);
+  $('input').not('[type="checkbox"]').on('input', calculate);
+
+  // Initial calculation
+  calculate();
+});
+
+function calculate() {
+  const inputs = parseInputs();
+  if (!inputs) {
+    resetResults();
+    return;
+  }
+
+  const paycheckCounts = getPaycheckCounts(inputs.firstPaycheckDate, inputs.paycheckDate);
+  const strategy = calculateStrategy(inputs, paycheckCounts);
+  const paychecks = getPaychecks(inputs, paycheckCounts, strategy);
+
+  renderResults(inputs, paycheckCounts, strategy, paychecks);
+}
+
+function parseInputs() {
+  const inputs = {
+    ageBracket: $('#ageBracket').val(),
+    baseElectiveDeferralLimit: parseFloat($('#baseElectiveDeferralLimit').val()) || 0,
+    catchUpElectiveDeferralLimit: parseFloat($('#catchUpElectiveDeferralLimit').val()) || 0,
+    totalContributionLimit: parseFloat($('#totalContributionLimit').val()) || 0,
+    priorYearHighEarner: $('#priorYearHighEarner').is(':checked'),
+    companyMatchPct: parseFloat($('#companyMatchPct').val()) || 0,
+    firstPaycheckDateStr: $('#firstPaycheckDate').val(),
+    paycheckDateStr: $('#paycheckDate').val(),
+    paycheckGross: parseFloat($('#paycheckGross').val()) || 0,
+    paycheckYtdGross: parseFloat($('#paycheckYtdGross').val()) || 0,
+    paycheckYtdPreTaxContrib: parseFloat($('#paycheckYtdPreTaxContrib').val()) || 0,
+    paycheckYtdRothContrib: parseFloat($('#paycheckYtdRothContrib').val()) || 0,
+    paycheckYtdPostTaxContrib: parseFloat($('#paycheckYtdPostTaxContrib').val()) || 0,
+    futurePostTaxContribPct: parseFloat($('#futurePostTaxContribPct').val()) || 0,
+  };
+
+  if (!inputs.ageBracket ||
+      inputs.baseElectiveDeferralLimit <= 0 ||
+      inputs.catchUpElectiveDeferralLimit < 0 ||
+      inputs.totalContributionLimit <= 0 ||
+      inputs.companyMatchPct < 0 ||
+      !inputs.firstPaycheckDateStr ||
+      !inputs.paycheckDateStr ||
+      inputs.paycheckGross <= 0 ||
+      inputs.paycheckYtdGross <= 0 ||
+      inputs.paycheckYtdPreTaxContrib < 0 ||
+      inputs.paycheckYtdRothContrib < 0 ||
+      inputs.paycheckYtdPostTaxContrib < 0 ||
+      inputs.futurePostTaxContribPct < 0) {
+    return null;
+  }
+
+  // Convert the date strings to date objects
+  const [y1, m1, d1] = inputs.firstPaycheckDateStr.split('-').map(Number);
+  inputs.firstPaycheckDate = new Date(y1, m1 - 1, d1);
+  const [y2, m2, d2] = inputs.paycheckDateStr.split('-').map(Number);
+  inputs.paycheckDate = new Date(y2, m2 - 1, d2);
+
+  // Compute the max elective deferral limit (base + catch-up elective deferrals)
+  inputs.maxElectiveDeferralLimit = inputs.ageBracket === 'under-50'
+    ? inputs.baseElectiveDeferralLimit
+    : inputs.baseElectiveDeferralLimit + inputs.catchUpElectiveDeferralLimit;
+
+  return inputs;
+}
+
+function getPaycheckCounts(firstPaycheckDate, paycheckDate) {
+  const currentYear = firstPaycheckDate.getFullYear();
+  const nextYearStart = new Date(currentYear + 1, 0, 1);
+
+  // Calculate the current paycheck index (Math.round shields against DST shifts)
+  const currentIndex = (Math.round((paycheckDate - firstPaycheckDate) / MsPerDay) / 14);
+
+  // Calculate the total number of paychecks in the year
+  let total = Math.ceil(((nextYearStart - firstPaycheckDate) / MsPerDay) / 14);
+
+  // Compute the last pay date
+  const finalPayDate = new Date(firstPaycheckDate);
+  finalPayDate.setDate(firstPaycheckDate.getDate() + (total * 14));
+
+  // Check if the final pay date would be on New Year's Day of next year
+  if (finalPayDate.getFullYear() === currentYear + 1 &&
+      finalPayDate.getMonth() === 0 &&
+      finalPayDate.getDate() === 1) {
+    // Add an extra paycheck because the holiday payday is moved to this year
+    total++;
+  }
+
+  // Calculate the number of remaining paychecks
+  const remaining = total - (currentIndex + 1);
+
+  return { total, remaining, currentIndex };
+}
+
+function calculateStrategy(inputs, paycheckCounts) {
+  // Compute how much has been contributed and how much remains
+  const totalElectiveDeferral = inputs.paycheckYtdPreTaxContrib + inputs.paycheckYtdRothContrib;
+  const remainingElectiveDeferral = Math.max(0, inputs.maxElectiveDeferralLimit - totalElectiveDeferral);
+
+  // Check if it's not possible to adjust contributions to maximize deferrals
+  if (paycheckCounts.remaining <= 0 || remainingElectiveDeferral <= 0) {
+    return { initialPct: 0, futurePct: 0, switchPaycheckIndex: paycheckCounts.currentIndex };
+  }
+
+  // Compute the exact target percent to maximize deferrals
+  const targetPct = (remainingElectiveDeferral / (paycheckCounts.remaining * inputs.paycheckGross)) * 100;
+  if (targetPct > 100) {
+    return { initialPct: 100, futurePct: 100, switchPaycheckIndex: paycheckCounts.total };
+  }
+
+  const initialPct = Math.ceil(targetPct);
+  const futurePct = Math.floor(targetPct);
+
+  // Compute what paycheck to switch from initial to future percent
+  const switchPaycheckIndex = paycheckCounts.currentIndex + Math.ceil((targetPct - futurePct) * paycheckCounts.remaining) + 1;
+
+  return { initialPct, futurePct, switchPaycheckIndex };
+}
+
+function getPaychecks(inputs, paycheckCounts, strategy) {
+  const paychecks = [];
+  let runningPreTax = 0;
+  let runningRoth = 0;
+  let runningCatchUp = 0;
+  let runningPostTax = 0;
+  let runningMatch = 0;
+
+  const totalElectiveDeferral = inputs.paycheckYtdPreTaxContrib + inputs.paycheckYtdRothContrib;
+  const ytdCatchUp = Math.max(0, totalElectiveDeferral - inputs.baseElectiveDeferralLimit);
+
+  // Estimate YTD match
+  const approximatePastMatchRate = inputs.paycheckYtdGross > 0 ? Math.min(inputs.companyMatchPct, (inputs.paycheckYtdPreTaxContrib / inputs.paycheckYtdGross) * 100) : 0;
+  const ytdMatch = inputs.paycheckYtdGross * (approximatePastMatchRate / 100);
+
+  for (let i = 0; i < paycheckCounts.total; i++) {
+    // Calculate the calendar date for this paycheck
+    const payDate = new Date(inputs.firstPaycheckDate);
+    payDate.setDate(inputs.firstPaycheckDate.getDate() + (i * 14));
+    const payDateStr = payDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+    if (i <= paycheckCounts.currentIndex) {
+      // Estimate historical paychecks
+      const historyWeight = (i + 1) / (paycheckCounts.currentIndex + 1);
+      runningPreTax = inputs.paycheckYtdPreTaxContrib * historyWeight;
+      runningRoth = inputs.paycheckYtdRothContrib * historyWeight;
+      runningCatchUp = ytdCatchUp * historyWeight;
+      runningPostTax = inputs.paycheckYtdPostTaxContrib * historyWeight;
+      runningMatch = ytdMatch * historyWeight;
+    } else {
+      //  Project future paychecks
+      const currentPct = (i < strategy.switchPaycheckIndex) ? strategy.initialPct : strategy.futurePct;
+      const matchPct = Math.min(inputs.companyMatchPct, currentPct);
+      const electiveDeferral = inputs.paycheckGross * (currentPct / 100);
+
+      // Calculate the base pre-tax deferral
+      const preTaxRoomLeft = Math.max(0, inputs.baseElectiveDeferralLimit - (runningPreTax + runningRoth - runningCatchUp));
+      const preTaxDeferral = Math.min(electiveDeferral, preTaxRoomLeft);
+
+      // Calculate the catch-up deferral (if allowed)
+      let catchUpDeferral = 0;
+      if (inputs.ageBracket !== 'under-50') {
+        const catchUpRoomLeft = Math.max(0, inputs.catchUpElectiveDeferralLimit - runningCatchUp);
+        const remainingDeferral = Math.max(0, electiveDeferral - preTaxDeferral);
+        catchUpDeferral = Math.min(remainingDeferral, catchUpRoomLeft);
+      }
+
+      runningPreTax += preTaxDeferral;
+      if (inputs.priorYearHighEarner) {
+        runningRoth += catchUpDeferral;
+      } else {
+        runningPreTax += catchUpDeferral;
+      }
+
+      runningCatchUp += catchUpDeferral;
+      runningPostTax += (inputs.paycheckGross * (inputs.futurePostTaxContribPct / 100));
+      runningMatch += (inputs.paycheckGross * (matchPct / 100));
+    }
+
+    paychecks.push({
+      payDate: payDateStr,
+      preTax: runningPreTax,
+      roth: runningRoth,
+      postTax: runningPostTax,
+      match: runningMatch,
+      totalCombined: runningPreTax + runningRoth + runningPostTax + runningMatch
+    });
+  }
+
+  return paychecks;
+}
+
+function resetResults() {
+  $('#schedule-text').html('<strong>Awaiting Inputs:</strong> Please provide valid input parameters.');
+  $('#val-paychecks-current').text('0');
+  $('#val-paychecks-total').text('0');
+  $('#val-new-pretax-contrib').text('$0.00');
+  $('#val-new-posttax-contrib').text('$0.00');
+  $('#val-projected-pretax').text('$0.00');
+  $('#val-projected-posttax').text('$0.00');
+  $('#val-projected-match').text('$0.00');
+  $('#val-projected-total').text('$0.00');
+
+  if (chartInstance) {
+    chartInstance.data.labels = [];
+    chartInstance.data.datasets.forEach(dataset => { dataset.data = []; });
+    chartInstance.update();
+  }
+  return;
+}
+
+function renderResults(inputs, paycheckCounts, strategy, paychecks) {
+  const lastPaycheck = paychecks[paychecks.length - 1];
+  
+  // Update Analytics Labels
+  $('#val-paychecks-current').text(paycheckCounts.currentIndex + 1);
+  $('#val-paychecks-total').text(paycheckCounts.total);
+  $('#val-new-pretax-contrib').text('$' + (inputs.paycheckGross * (strategy.initialPct / 100)).toLocaleString(undefined, { maximumFractionDigits: 2 }));
+  $('#val-new-posttax-contrib').text('$' + (inputs.paycheckGross * (inputs.futurePostTaxContribPct / 100)).toLocaleString(undefined, { maximumFractionDigits: 2 }));
+  $('#val-projected-pretax').text('$' + lastPaycheck.preTax.toLocaleString(undefined, { maximumFractionDigits: 2 }));
+  $('#val-projected-roth').text('$' + lastPaycheck.roth.toLocaleString(undefined, { maximumFractionDigits: 2 }));
+  $('#val-projected-posttax').text('$' + lastPaycheck.postTax.toLocaleString(undefined, { maximumFractionDigits: 2 }));
+  $('#val-projected-match').text('$' + lastPaycheck.match.toLocaleString(undefined, { maximumFractionDigits: 2 }));
+  $('#val-projected-total').text('$' + lastPaycheck.totalCombined.toLocaleString(undefined, { maximumFractionDigits: 2 }));
+
+  // Create the schedule bullet list
+  const $ul = $('<ul>');
+  if (paycheckCounts.remaining == 0) {
+    $ul.append($('<li>').html('<strong>No More Paychecks:</strong> There are no more paychecks remaining to try and maximize contributions.'));
+  } else if (strategy.initialPct === 0) {
+    $ul.append($('<li>').html('<strong>Fully Funded:</strong> Elective deferral limit already reached.'));
+  } else if (strategy.initialPct == 100) {
+    $ul.append($('<li>').html('<strong>Short-fall:</strong> You will likely not maximize your contributions even if you set your rate to <strong>100%</strong>.'));
+  } else {
+    // Start with what should be done today
+    $ul.append($('<li>').html(`Set rate to <strong>${strategy.initialPct}%</strong> before the next paycheck.`));
+
+    // Add when contributions need to be updated (if needed)
+    if (strategy.switchPaycheckIndex < (paycheckCounts.total - 1) &&
+        strategy.futurePct >= 0) {
+      // Project the target paycheck date to switch contributions
+      const targetPaycheckDate = new Date(inputs.firstPaycheckDate.getTime() + strategy.switchPaycheckIndex * 14 * MsPerDay);
+      const targetPaycheckDateStr = targetPaycheckDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+      // Step back 13 days to find the adjustment reminder date
+      const adjustDate = new Date(targetPaycheckDate.getTime() - 13 * MsPerDay);
+      const adjustDateStr = adjustDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+      $ul.append($('<li>').html(`On <strong>${adjustDateStr}</strong> change your rate to <strong>${strategy.futurePct}%</strong> so it processes in time for your <strong>${targetPaycheckDateStr}</strong> paycheck.`));
+    } else {
+      $ul.append($('<li>').html('No further changes are needed for the rest of this year.'));
+    }
+  }
+
+  // Check if any company match will be lost
+  if (strategy.initialPct < inputs.companyMatchPct ||
+      strategy.futurePct < inputs.companyMatchPct) {
+    $ul.append($('<li>')
+      .addClass('text-danger')
+      .text('Warning: Contribution rate falls below company match rate. You will lose some company match money.'));
+  }
+
+  // Check if projected contributions are over the total contribution limit
+  if (lastPaycheck.totalCombined > inputs.totalContributionLimit) {
+    $ul.append($('<li>')
+      .addClass('text-danger')
+      .text(`Warning: Total projected contributions ($${lastPaycheck.totalCombined.toLocaleString(undefined, {maximumFractionDigits:0})}) exceed the IRS Combined Annual Limit.`));
+  }
+
+  // Add a warning if the limits seem fishy
+  const selectedYear = inputs.firstPaycheckDate.getFullYear();
+  const irsLimits = IrsLimitsByYear[selectedYear];
+  if (irsLimits) {
+    // Check if the user's inputs deviate from that year's official IRS defaults
+    let expBaseElectiveDeferralLimit = irsLimits.preTax;
+    let expCatchUpElectiveDeferralLimit = 0;
+    let expContributionLimit = irsLimits.combined;
+
+    // Adjust expected defaults dynamically based on the age bracket choice
+    if (inputs.ageBracket === '50-59' || inputs.ageBracket === '64-plus') {
+      expCatchUpElectiveDeferralLimit = irsLimits.catchUp;
+    } else if (inputs.ageBracket === '60-63') {
+      expCatchUpElectiveDeferralLimit = irsLimits.enhancedCatchUp;
+    }
+    expContributionLimit += expCatchUpElectiveDeferralLimit;
+
+    if (inputs.baseElectiveDeferralLimit !== expBaseElectiveDeferralLimit) {
+      $ul.append($('<li>')
+        .addClass('text-danger')
+        .text(`Warning: Base elective limit $${inputs.baseElectiveDeferralLimit.toLocaleString()} differs from ${selectedYear} IRS defaults ($${expBaseElectiveDeferralLimit.toLocaleString()}).`));
+    }
+    if (inputs.ageBracket !== 'under-50' && inputs.catchUpElectiveDeferralLimit !== expCatchUpElectiveDeferralLimit) {
+      $ul.append($('<li>')
+        .addClass('text-danger')
+        .text(`Warning: Catch-up elective limit $${inputs.catchUpElectiveDeferralLimit.toLocaleString()} differs from ${selectedYear} IRS defaults ($${expCatchUpElectiveDeferralLimit.toLocaleString()}).`));
+    }
+    if (inputs.totalContributionLimit !== expContributionLimit) {
+      $ul.append($('<li>')
+        .addClass('text-danger')
+        .text(`Warning: Combined elective limit $${inputs.totalContributionLimit.toLocaleString()} differs from ${selectedYear} IRS defaults ($${expContributionLimit.toLocaleString()}).`));
+    }
+  } else {
+    const $link = $('<a>', {
+      href: 'https://www.irs.gov/retirement-plans/cola-increases-for-dollar-limitations-on-benefits-and-contributions',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      class: 'alert-link',
+      text: 'Review official IRS limits'
+    }).css('text-decoration', 'underline');
+
+    // Provide a warning that we cannot verify the limits
+    $ul.append($('<li>')
+      .addClass('text-danger')
+      .text(`Warning: Cannot verify limits. ${selectedYear} data has not been added to the dataset yet. `)
+      .append($link)
+      .append('.')
+    );
+  }
+
+  $('#schedule-text').html($ul);
+
+  renderChart(inputs, paycheckCounts, paychecks, strategy);
+}
+
+function initChart() {
   // Create the chart
   const ctx = $('#forecastChart')[0].getContext('2d');
-  chartInstance = new Chart(ctx, {
+  return new Chart(ctx, {
     type: 'line',
     data: {
       labels: [],
@@ -98,7 +439,7 @@ $(document).ready(() => {
         },
         {
           label: 'Base Limit',
-          stack: 'limitBaseElective',
+          stack: 'baseElectiveDeferralLimit',
           stacked: false,
           data: [],
           borderColor: '#e53e3e',
@@ -111,7 +452,7 @@ $(document).ready(() => {
         },
         {
           label: 'Catch-Up Limit',
-          stack: 'limitCatchUpElective',
+          stack: 'catchUpElectiveDeferralLimit',
           stacked: false,
           data: [],
           borderColor: '#e53e3e',
@@ -124,7 +465,7 @@ $(document).ready(() => {
         },
         {
           label: 'Combined Limit',
-          stack: 'limitCombined',
+          stack: 'totalContributionLimit',
           stacked: false,
           data: [],
           borderColor: '#741b1b',
@@ -168,403 +509,58 @@ $(document).ready(() => {
       }
     }
   });
-
-  // Add handlers to the save/load buttons
-  $('#save-input').on('click', exportJson);
-  $('#load-input').on('change', importJson);
-
-  // Add handler to show/hide catch-up fields
-  $('#ageBracket').change(function() {
-    const selectedValue = $(this).val();
-    switch (selectedValue) {
-      case 'under-50':
-        $('.catchup').addClass('d-none');
-        break;
-      default:
-        $('.catchup').removeClass('d-none');
-        break;
-    }
-  });
-
-  // Add handlers to call calculateStrategy when input changes
-  $('select, input[type="checkbox"]').on('change', calculateStrategy);
-  $('input').not('[type="checkbox"]').on('input', calculateStrategy);
-
-  // Compute the results on page load
-  calculateStrategy();
-});
-
-function calculateStrategy() {
-  const ageBracket = $('#ageBracket').val();
-  const limitBaseElective = parseFloat($('#limitBaseElective').val()) || 0;
-  const limitCatchUpElective = parseFloat($('#limitCatchUpElective').val()) || 0;
-  const isHighEarner = $('#priorYearHighEarner').is(':checked');
-  const limitCombined = parseFloat($('#limitCombined').val()) || 0;
-  const companyMatchPct = parseFloat($('#companyMatchPct').val()) || 0;
-  const firstPaycheckDateStr = $('#firstPaycheckDate').val();
-  const paycheckDateStr = $('#paycheckDate').val();
-  const paycheckGross = parseFloat($('#paycheckGross').val()) || 0;
-  const paycheckYtdGross = parseFloat($('#paycheckYtdGross').val()) || 0;
-  const paycheckYtdPreTaxContrib = parseFloat($('#paycheckYtdPreTaxContrib').val()) || 0;
-  const paycheckYtdRothContrib = parseFloat($('#paycheckYtdRothContrib').val()) || 0;
-  const paycheckYtdPostTaxContrib = parseFloat($('#paycheckYtdPostTaxContrib').val()) || 0;
-  const futurePostTaxContribPct = parseFloat($('#futurePostTaxContribPct').val()) || 0;
-
-  // Validate the input
-  if (!ageBracket ||
-      limitBaseElective <= 0 ||
-      limitCatchUpElective < 0 ||
-      limitCombined <= 0 ||
-      companyMatchPct <= 0 ||
-      !firstPaycheckDateStr ||
-      !paycheckDateStr ||
-      paycheckGross <= 0 ||
-      paycheckYtdGross <= 0 ||
-      paycheckYtdPreTaxContrib < 0 ||
-      paycheckYtdRothContrib < 0 ||
-      paycheckYtdPostTaxContrib < 0 ||
-      futurePostTaxContribPct < 0) {
-    $('#schedule-text').html('<strong>Awaiting Inputs:</strong> Please provide valid income and date parameters.');
-    $('#val-paychecks-current').text('0');
-    $('#val-paychecks-total').text('0');
-    $('#val-new-pretax-contrib').text('$0.00');
-    $('#val-new-posttax-contrib').text('$0.00');
-    $('#val-projected-pretax').text('$0.00');
-    $('#val-projected-posttax').text('$0.00');
-    $('#val-projected-match').text('$0.00');
-    $('#val-projected-total').text('$0.00');
-
-    if (chartInstance) {
-      chartInstance.data.labels = [];
-      chartInstance.data.datasets.forEach(dataset => {
-        dataset.data = [];
-      });
-      chartInstance.update();
-    }
-    return;
-  }
-
-  // Convert the date strings to date objects
-  const [y1, m1, d1] = firstPaycheckDateStr.split('-').map(Number);
-  const firstPaycheckDate = new Date(y1, m1 - 1, d1);
-  const [y2, m2, d2] = paycheckDateStr.split('-').map(Number);
-  const paycheckDate = new Date(y2, m2 - 1, d2);
-
-  // Calculate various paycheck counts
-  const paycheckCounts = getPaycheckCounts(firstPaycheckDate, paycheckDate);
-  const remainingPaychecks = paycheckCounts.remaining;
-  const totalPaychecks = paycheckCounts.total;
-  const currentPaycheckIndex = paycheckCounts.currentIndex;
-
-  // Determine the elective limit, which include catch-up
-  let maxElectiveLimit = limitBaseElective;
-  if (ageBracket !== 'under-50') {
-    maxElectiveLimit = limitBaseElective + limitCatchUpElective;
-  }
-
-  // Compute the total elective contribution to date and how much before the limit
-  const totalElectiveDeferral = paycheckYtdPreTaxContrib + paycheckYtdRothContrib;
-  const remainingElectiveDeferal = Math.max(0, maxElectiveLimit - totalElectiveDeferral);
-  const ytdCatchUp = Math.max(0, totalElectiveDeferral - limitBaseElective);
-
-  // Calculate the contribution schedule
-  let initialPct = 0;
-  let futurePct = 0;
-  let switchPaycheckIndex = remainingPaychecks;
-  if (remainingPaychecks > 0 && remainingElectiveDeferal > 0) {
-    const contributionSchedule = getContributionSchedule(remainingElectiveDeferal, remainingPaychecks, paycheckGross);
-    initialPct = contributionSchedule.initialPct;
-    futurePct = contributionSchedule.futurePct;
-    switchPaycheckIndex = contributionSchedule.switchPaycheckIndex;
-  }
-
-  // Estimate YTD match
-  const approximatePastMatchRate = paycheckYtdGross > 0 ? Math.min(companyMatchPct, (paycheckYtdPreTaxContrib / paycheckYtdGross) * 100) : 0;
-  const ytdMatch = paycheckYtdGross * (approximatePastMatchRate / 100);
-
-  // Calculate the chart data
-  let runningPreTax = 0;
-  let runningRoth = 0;
-  let runningCatchUp = 0;
-  let runningPostTax = 0;
-  let runningMatch = 0;
-  const chartLabels = [];
-  const chartDataPreTax = [];
-  const chartDataRoth = [];
-  const chartDataPostTax = [];
-  const chartDataMatch = [];
-  for (let i = 0; i < totalPaychecks; i++) {
-    // Calculate the calendar date for this paycheck
-    const payDate = new Date(firstPaycheckDate);
-    payDate.setDate(firstPaycheckDate.getDate() + (i * 14));
-    chartLabels.push(payDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
-
-    if (i < currentPaycheckIndex) {
-      // Estimate historical data
-      const historyWeight = (i + 1) / currentPaycheckIndex;
-      
-      runningPreTax = paycheckYtdPreTaxContrib * historyWeight;
-      runningRoth = paycheckYtdRothContrib * historyWeight;
-      runningCatchUp = ytdCatchUp * historyWeight;
-      runningPostTax = paycheckYtdPostTaxContrib * historyWeight;
-      runningMatch = ytdMatch * historyWeight;
-    } else {
-      // Project future data
-      const futureCheckNum = i - currentPaycheckIndex;
-      const currentAppliedPct = (futureCheckNum < switchPaycheckIndex) ? initialPct : futurePct;
-      const effectiveMatchPct = Math.min(companyMatchPct, currentAppliedPct);
-
-      const electiveDeferral = paycheckGross * (currentAppliedPct / 100);
-
-      // Calculate the base pre-tax deferral
-      const preTaxRoomLeft = Math.max(0, limitBaseElective - (runningPreTax + runningRoth - runningCatchUp));
-      const preTaxDeferral = Math.min(electiveDeferral, preTaxRoomLeft);
-
-      // Calculate the catch-up deferral
-      const catchUpRoomLeft = Math.max(0, limitCatchUpElective - runningCatchUp);
-      const remainingDeferral = Math.max(0, electiveDeferral - preTaxDeferral);
-      const catchUpDeferral = Math.min(remainingDeferral, catchUpRoomLeft);
-
-      runningPreTax += preTaxDeferral;
-
-      // Add catchup to Roth if a high-earner, otherwise add to pre-tax
-      if (isHighEarner) {
-        runningRoth += catchUpDeferral;
-      } else {
-        runningPreTax += catchUpDeferral;
-      }
-
-      runningCatchUp += catchUpDeferral;
-      runningPostTax += (paycheckGross * (futurePostTaxContribPct / 100));
-      runningMatch += (paycheckGross * (effectiveMatchPct / 100));
-    }
-
-    // Add the data point to the chart data
-    chartDataPreTax.push(runningPreTax);
-    chartDataRoth.push(runningRoth);
-    chartDataPostTax.push(runningPostTax);
-    chartDataMatch.push(runningMatch);
-  }
-
-  // Create the schedule bullet list
-  const $ul = $('<ul>');
-  if (remainingElectiveDeferal <= 0 || remainingPaychecks <= 0) {
-    // Already maxed
-    $ul.append($('<li>').html('<strong>Fully Funded:</strong> No remaining paychecks or elective deferral limit reached.'));
-  } else {
-    // Start with what should be done today
-    $ul.append($('<li>').html(`Set rate to <strong>${initialPct}%</strong> before the next paycheck.`));
-
-    // Add when contributions need to be updated (if needed)
-    if (switchPaycheckIndex !== remainingPaychecks && futurePct >= 0) {
-      // Project the target paycheck date to switch contributions
-      const targetCheckDate = new Date(firstPaycheckDate);
-      targetCheckDate.setDate(firstPaycheckDate.getDate() + ((currentPaycheckIndex + switchPaycheckIndex) * 14));
-      const targetCheckDateStr = targetCheckDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-
-      // Step back 13 days to find the adjustment reminder date
-      const adjustDate = new Date(targetCheckDate);
-      adjustDate.setDate(targetCheckDate.getDate() - 13);
-      const adjustDateStr = adjustDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-
-      $ul.append($('<li>').html(`On <strong>${adjustDateStr}</strong> change your rate to <strong>${futurePct}%</strong> so it processes in time for your <strong>${targetCheckDateStr}</strong> paycheck.`));
-    }
-  }
-
-  // Check if any company match will be lost
-  if (initialPct < companyMatchPct || futurePct < companyMatchPct) {
-    $ul.append($('<li>')
-      .addClass('text-danger')
-      .text('Warning: Contribution rate falls below company match rate. You will lose some company match money.'));
-  }
-
-  // Verify aggregate totals under Section 415(c) caps
-  const totalProjected = runningPreTax + runningRoth + runningPostTax + runningMatch;
-  if (totalProjected > limitCombined) {
-    $ul.append($('<li>')
-      .addClass('text-danger')
-      .text(`Warning: Total projected contributions ($${totalProjected.toLocaleString(undefined, {maximumFractionDigits:0})}) exceed the IRS Combined Annual Limit.`));
-  }
-
-  // Add a warning if the limits seem fishy
-  const selectedYear = firstPaycheckDate.getFullYear();
-  const actualYearLimits = IrsLimitsByYear[selectedYear];
-  if (actualYearLimits) {
-    // Check if the user's inputs deviate from that year's official IRS defaults
-    let expectedPreTax = actualYearLimits.preTax;
-    let expectedCatchUp = 0;
-    let expectedCombined = actualYearLimits.combined;
-
-    // Adjust expected defaults dynamically based on the age bracket choice
-    if (ageBracket === '50-59' || ageBracket === '64-plus') {
-      expectedCatchUp = actualYearLimits.catchUp;
-    } else if (ageBracket === '60-63') {
-      expectedCombined += actualYearLimits.enhancedCatchUp;
-    }
-    expectedCombined += expectedCatchUp;
-
-    if (limitBaseElective !== expectedPreTax) {
-      $ul.append($('<li>')
-        .addClass('text-danger')
-        .text(`Warning: Base elective limit $${limitBaseElective.toLocaleString()} differs from ${selectedYear} IRS defaults ($${expectedPreTax.toLocaleString()}).`));
-    }
-    if (ageBracket !== 'under-50' && limitCatchUpElective !== expectedCatchUp) {
-      $ul.append($('<li>')
-        .addClass('text-danger')
-        .text(`Warning: Catch-up elective limit $${limitCatchUpElective.toLocaleString()} differs from ${selectedYear} IRS defaults ($${expectedCatchUp.toLocaleString()}).`));
-    }
-    if (limitCombined !== expectedCombined) {
-      $ul.append($('<li>')
-        .addClass('text-danger')
-        .text(`Warning: Combined elective limit $${limitCombined.toLocaleString()} differs from ${selectedYear} IRS defaults ($${expectedCombined.toLocaleString()}).`));
-    }
-  } else {
-    const $link = $('<a>', {
-      href: 'https://www.irs.gov/retirement-plans/cola-increases-for-dollar-limitations-on-benefits-and-contributions',
-      target: '_blank',
-      rel: 'noopener noreferrer',
-      class: 'alert-link',
-      text: 'Review official IRS limits'
-    }).css('text-decoration', 'underline');
-
-    // Provide a warning that we cannot verify the limits
-    $ul.append($('<li>')
-      .addClass('text-danger')
-      .text(`Warning: Cannot verify limits. ${selectedYear} data has not been added to the dataset yet. `)
-      .append($link)
-      .append('.')
-    );
-  }
-
-  $('#schedule-text').html($ul);
-
-  const newPreTaxContrib = paycheckGross * (initialPct / 100);
-  const newPostTaxContrib = paycheckGross * (futurePostTaxContribPct / 100);
-
-  // Display summary metrics on the analytics section
-  $('#val-paychecks-current').text(currentPaycheckIndex);
-  $('#val-paychecks-total').text(totalPaychecks);
-  $('#val-new-pretax-contrib').text('$' + newPreTaxContrib.toLocaleString(undefined, { maximumFractionDigits: 2 }));
-  $('#val-new-posttax-contrib').text('$' + newPostTaxContrib.toLocaleString(undefined, { maximumFractionDigits: 2 }));
-  $('#val-projected-pretax').text('$' + runningPreTax.toLocaleString(undefined, {maximumFractionDigits: 2}));
-  $('#val-projected-roth').text('$' + runningRoth.toLocaleString(undefined, {maximumFractionDigits: 2}));
-  $('#val-projected-posttax').text('$' + runningPostTax.toLocaleString(undefined, {maximumFractionDigits: 2}));
-  $('#val-projected-match').text('$' + runningMatch.toLocaleString(undefined, {maximumFractionDigits: 2}));
-  $('#val-projected-total').text('$' + totalProjected.toLocaleString(undefined, {maximumFractionDigits: 2}));
-
-  renderChart(chartLabels,
-      chartDataPreTax,
-      chartDataRoth,
-      chartDataPostTax,
-      chartDataMatch,
-      currentPaycheckIndex,
-      currentPaycheckIndex + switchPaycheckIndex,
-      limitBaseElective,
-      maxElectiveLimit,
-      limitCombined);
 }
 
-function getPaycheckCounts(firstPaycheckDate, paycheckDate) {
-  const msPerDay = 24 * 60 * 60 * 1000;
-
-  const currentYear = firstPaycheckDate.getFullYear();
-  const nextYearStart = new Date(currentYear + 1, 0, 1);
-
-  // Calculate the current paycheck index (Math.round shields against DST shifts)
-  const currentIndex = (Math.round((paycheckDate - firstPaycheckDate) / msPerDay) / 14) + 1;
-
-  // Calculate the total number of paychecks in the year
-  let total = Math.ceil(((nextYearStart - firstPaycheckDate) / msPerDay) / 14);
-
-  // Compute the last pay date
-  const finalPayDate = new Date(firstPaycheckDate);
-  finalPayDate.setDate(firstPaycheckDate.getDate() + (total * 14));
-  if (finalPayDate.getFullYear() === currentYear + 1 &&
-      finalPayDate.getMonth() === 0 &&
-      finalPayDate.getDate() === 1) {
-    // Final pay date falls on new years holiday, there is an extra paycheck this year
-    total++;
-  }
-
-  // Calculate the number of remaining paychecks
-  const remaining = total - currentIndex;
-
-  return { total, remaining, currentIndex };
-}
-
-function getContributionSchedule(remainingElectiveDeferal, remainingPaychecks, paycheckGross) {
-  const rawTargetPct = (remainingElectiveDeferal / (remainingPaychecks * paycheckGross)) * 100;
-  const initialPct = Math.ceil(rawTargetPct);
-  const futurePct = Math.floor(rawTargetPct);
-
-  // Default to all checks at the same rate if it divides into a perfect integer
-  if (initialPct === futurePct) {
-    return { initialPct, futurePct, switchPaycheckIndex: remainingPaychecks };
-  }
-
-  // Compute
-  const totalAtLowerRate = remainingPaychecks * paycheckGross * (futurePct / 100);
-  const deficitToCover = remainingElectiveDeferal - totalAtLowerRate;
-  const perPaycheckDifference = paycheckGross * ((initialPct - futurePct) / 100);
-
-  // Math.ceil ensures we safely cover the exact threshold cap
-  const switchPaycheckIndex = Math.ceil(deficitToCover / perPaycheckDifference);
-
-  return { initialPct, futurePct, switchPaycheckIndex };
-}
-
-function renderChart(labels, pretaxData, rothData, posttaxData, matchData, historyLimit, switchIdx, baseElectiveLimit, totalElectiveLimit, combinedLimit) {
+function renderChart(inputs, paycheckCounts, paychecks, strategy) {
   if (!chartInstance) {
     return;
   }
 
   // Update our state in the chart for the point color funcs
-  chartInstance.options.historyLimit = historyLimit;
-  chartInstance.options.switchIdx = switchIdx;
+  chartInstance.options.historyLimit = paycheckCounts.currentIndex;
+  chartInstance.options.switchIdx = strategy.switchPaycheckIndex;
 
-  // Update the datasets
-  chartInstance.data.labels = labels;
-  chartInstance.data.datasets[0].data = pretaxData;
-  chartInstance.data.datasets[1].data = rothData;
-  chartInstance.data.datasets[2].data = posttaxData;
-  chartInstance.data.datasets[3].data = matchData;
-  chartInstance.data.datasets[4].data = Array(labels.length).fill(baseElectiveLimit);
-  chartInstance.data.datasets[5].data = Array(labels.length).fill(totalElectiveLimit);
-  chartInstance.data.datasets[6].data = Array(labels.length).fill(combinedLimit);
+  // Set the dataset labels to the pay dates
+  chartInstance.data.labels = paychecks.map(p => p.payDate);
 
-  // Get the max for all the datasets
-  const finalPreTax = pretaxData.length > 0 ? pretaxData[pretaxData.length - 1] : 0;
-  const finalRoth = rothData.length > 0 ? rothData[rothData.length - 1] : 0;
-  const finalPostTax = posttaxData.length > 0 ? posttaxData[posttaxData.length - 1] : 0;
-  const finalMatch = matchData.length > 0 ? matchData[matchData.length - 1] : 0;
+  // Update the paycheck datasets
+  chartInstance.data.datasets[0].data = paychecks.map(p => p.preTax);
+  chartInstance.data.datasets[1].data = paychecks.map(p => p.roth);
+  chartInstance.data.datasets[2].data = paychecks.map(p => p.postTax);
+  chartInstance.data.datasets[3].data = paychecks.map(p => p.match);
 
-  // Hide roth dataset if there is no roth data
-  chartInstance.data.datasets[1].hidden = finalRoth == 0;
+  // Update the limit lines
+  const n = paychecks.length;
+  chartInstance.data.datasets[4].data = Array(n).fill(inputs.baseElectiveDeferralLimit);
+  chartInstance.data.datasets[5].data = Array(n).fill(inputs.maxElectiveDeferralLimit);
+  chartInstance.data.datasets[6].data = Array(n).fill(inputs.totalContributionLimit);
 
-  // Hide post-tax datasets if there is no posttax data
-  const hasPostTax = posttaxData.length > 0 && posttaxData.at(-1) > 0;
-  chartInstance.data.datasets[2].hidden = finalPostTax == 0;
-  chartInstance.data.datasets[6].hidden = finalPostTax == 0;
+  // Hide non-applicable datasets
+  const lastPaycheck = paychecks[paychecks.length - 1];
+  chartInstance.data.datasets[1].hidden = lastPaycheck.roth === 0;
+  chartInstance.data.datasets[2].hidden = lastPaycheck.postTax === 0;
+  chartInstance.data.datasets[6].hidden = lastPaycheck.postTax === 0;
 
-  // Compute the max graph height
-  const totalStackedHeight = finalPreTax + finalRoth + finalPostTax + finalMatch;
-  const absoluteMaxCeiling = Math.max(totalStackedHeight, combinedLimit);
-  chartInstance.options.scales.y.max = Math.ceil(absoluteMaxCeiling);
+  // Update the Y-axis max
+  chartInstance.options.scales.y.max = Math.ceil(Math.max(lastPaycheck.totalCombined, inputs.totalContributionLimit));
 
   // Trigger the updates
   chartInstance.update();
 }
 
 function exportJson() {
-  // Collect the data to save from the HTML
-  const data = {};
-  $('[data-save]').each(function() {
-    if ($(this).is(':checkbox')) {
-      data[this.id] = $(this).is(':checked');
-    } else {
-      data[this.id] = $(this).val();
-    }
-  });
+  const inputs = parseInputs();
+  if (!inputs) {
+    alert('Cannot export: Please fix input parameters');
+    return;
+  }
+
+  // Clean-up the input
+  inputs.firstPaycheckDate = inputs.firstPaycheckDateStr;
+  inputs.paycheckDate = inputs.paycheckDateStr;
+  delete inputs.firstPaycheckDateStr;
+  delete inputs.paycheckDateStr;
+  delete inputs.maxElectiveDeferralLimit;
 
   // Generate the date stamp (YYYY-MM-DD)
   const now = new Date();
@@ -573,7 +569,7 @@ function exportJson() {
     + String(now.getDate()).padStart(2, '0');
 
   // Serialize the string, turn it into a blob, and make a url pointing to the blob
-  const jsonString = JSON.stringify(data, null, 2);
+  const jsonString = JSON.stringify(inputs, null, 2);
   const blob = new Blob([jsonString], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
 
@@ -619,8 +615,8 @@ function importJson(e) {
           break;
       }
 
-      calculateStrategy();
-      $('#upload-json').val('');
+      calculate();
+      $('#load-input').val('');
     } catch (err) {
       console.error('Error parsing file:', err);
       alert('Error parsing file: Invalid file structure or format.');

@@ -33,7 +33,7 @@
 
           <div class="mb-3">
             <label for="ageBracket" class="form-label">Age Bracket at End of Year</label>
-            <select id="ageBracket" class="form-select" data-save>
+            <select id="ageBracket" class="form-select">
               <option value="under-50" selected>Under 50</option>
               <option value="50-59">Ages 50 – 59</option>
               <option value="60-63">Ages 60 – 63 (Enhanced Catch-up)</option>
@@ -42,57 +42,57 @@
           </div>
 
           <div class="mb-3">
-            <label for="limitBaseElective" class="form-label">IRS Base Deferral Limit</label>
+            <label for="baseElectiveDeferralLimit" class="form-label">IRS Base Deferral Limit</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="limitBaseElective" class="form-control" value="24500" min="0" data-save>
+              <input type="number" id="baseElectiveDeferralLimit" class="form-control" value="24500" min="0">
             </div>
           </div>
 
           <div class="mb-3 catchup d-none">
-            <label for="limitCatchUpElective" class="form-label">IRS Catch-Up Deferral Limit</label>
+            <label for="catchUpElectiveDeferralLimit" class="form-label">IRS Catch-Up Deferral Limit</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="limitCatchUpElective" class="form-control" value="8000" min="0" data-save>
+              <input type="number" id="catchUpElectiveDeferralLimit" class="form-control" value="8000" min="0">
             </div>
-          </div>
-
-          <div class="mb-3 catchup d-none">
-            <input type="checkbox" id="priorYearHighEarner" class="form-check-input" value="" data-save>
-            <label for="priorYearHighEarner" class="form-check-label">High-Earner Roth Catch-Up</label>
           </div>
 
           <div class="mb-3">
-            <label for="limitCombined" class="form-label">IRS Combined Limit (Base + Catch-Up + Match)</label>
+            <label for="totalContributionLimit" class="form-label">IRS Total Contribution Limit (Deferrals + Post-Tax + Match)</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="limitCombined" class="form-control" value="72000" min="0" data-save>
+              <input type="number" id="totalContributionLimit" class="form-control" value="72000" min="0">
             </div>
+          </div>
+
+          <div class="mb-3 catchup d-none">
+            <input type="checkbox" id="priorYearHighEarner" class="form-check-input" value="">
+            <label for="priorYearHighEarner" class="form-check-label">High-Earner Roth Catch-Up</label>
           </div>
 
           <div class="mb-3">
             <label for="companyMatchPct" class="form-label">Company Match Percentage</label>
             <div class="input-group">
               <span class="input-group-text">%</span>
-              <input type="number" id="companyMatchPct" class="form-control" value="6" min="0" max="100" data-save>
+              <input type="number" id="companyMatchPct" class="form-control" value="6" min="0" max="100">
             </div>
           </div>
 
           <div class="mb-3">
             <label for="firstPaycheckDate" class="form-label">First Paycheck Date of Year</label>
-            <input type="date" id="firstPaycheckDate" class="form-control" data-save>
+            <input type="date" id="firstPaycheckDate" class="form-control">
           </div>
 
           <div class="mb-3">
             <label for="paycheckDate" class="form-label">Current Paycheck Date</label>
-            <input type="date" id="paycheckDate" class="form-control" data-save>
+            <input type="date" id="paycheckDate" class="form-control">
           </div>
 
           <div class="mb-3">
             <label for="paycheckGross" class="form-label">Paycheck Gross Income</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="paycheckGross" class="form-control" min="0" data-save>
+              <input type="number" id="paycheckGross" class="form-control" min="0">
             </div>
           </div>
 
@@ -100,7 +100,7 @@
             <label for="paycheckYtdGross" class="form-label">Paycheck YTD Gross Income</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="paycheckYtdGross" class="form-control" min="0" data-save>
+              <input type="number" id="paycheckYtdGross" class="form-control" min="0">
             </div>
           </div>
 
@@ -108,7 +108,7 @@
             <label for="paycheckYtdPreTaxContrib" class="form-label">Paycheck YTD Pre-Tax Contributions</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="paycheckYtdPreTaxContrib" class="form-control" min="0" data-save>
+              <input type="number" id="paycheckYtdPreTaxContrib" class="form-control" min="0">
             </div>
           </div>
 
@@ -116,7 +116,7 @@
             <label for="paycheckYtdRothContrib" class="form-label">Paycheck YTD Roth Contributions</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="paycheckYtdRothContrib" class="form-control" min="0" data-save>
+              <input type="number" id="paycheckYtdRothContrib" class="form-control" min="0">
             </div>
           </div>
 
@@ -124,7 +124,7 @@
             <label for="paycheckYtdPostTaxContrib" class="form-label">Paycheck YTD Post-Tax Contributions</label>
             <div class="input-group">
               <span class="input-group-text">$</span>
-              <input type="number" id="paycheckYtdPostTaxContrib" class="form-control" min="0" data-save>
+              <input type="number" id="paycheckYtdPostTaxContrib" class="form-control" min="0">
             </div>
           </div>
 
@@ -132,7 +132,7 @@
             <label for="futurePostTaxContribPct" class="form-label">Future Post-Tax Contribution Percentage</label>
             <div class="input-group">
               <span class="input-group-text">%</span>
-              <input type="number" id="futurePostTaxContribPct" class="form-control" value="0" min="0" max="100" data-save>
+              <input type="number" id="futurePostTaxContribPct" class="form-control" value="0" min="0" max="100">
             </div>
           </div>
 
