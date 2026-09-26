@@ -171,7 +171,7 @@ function getPaychecks(inputs, paycheckCounts, strategy) {
   const ytdCatchUp = Math.max(0, totalElectiveDeferral - inputs.baseElectiveDeferralLimit);
 
   // Estimate YTD match
-  const approximatePastMatchRate = inputs.paycheckYtdGross > 0 ? Math.min(inputs.companyMatchPct, (inputs.paycheckYtdPreTaxContrib / inputs.paycheckYtdGross) * 100) : 0;
+  const approximatePastMatchRate = inputs.paycheckYtdGross > 0 ? Math.min(inputs.companyMatchPct, ((inputs.paycheckYtdPreTaxContrib + inputs.paycheckYtdRothContrib) / inputs.paycheckYtdGross) * 100) : 0;
   const ytdMatch = inputs.paycheckYtdGross * (approximatePastMatchRate / 100);
 
   for (let i = 0; i < paycheckCounts.total; i++) {
