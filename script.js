@@ -338,7 +338,7 @@ function renderResults(inputs, paycheckCounts, strategy, paychecks) {
     if (inputs.totalContributionLimit !== expContributionLimit) {
       $ul.append($('<li>')
         .addClass('text-danger')
-        .text(`Warning: Combined elective limit $${inputs.totalContributionLimit.toLocaleString()} differs from ${selectedYear} IRS defaults ($${expContributionLimit.toLocaleString()}).`));
+        .text(`Warning: Total contribution limit $${inputs.totalContributionLimit.toLocaleString()} differs from ${selectedYear} IRS defaults ($${expContributionLimit.toLocaleString()}).`));
     }
   } else {
     const $link = $('<a>', {
